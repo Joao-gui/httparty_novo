@@ -1,0 +1,6 @@
+---
+#profiles
+default: -p html_report
+
+#reports
+html_report: --format pretty --format html --out=reports/features_report.html
