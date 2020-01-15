@@ -1,58 +1,63 @@
-version: 2 # use CircleCI 2.0
-jobs: # a collection of steps
+# Ruby CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-ruby/ for more details
+#
+version: 2
+jobs:
   build:
-    working_directory: ~/HTTParty # directory where steps will run
-    docker: # run the steps with Docker
-      - image: circleci/ruby:2.6-rc-node # ...with this image as the primary container; this is where all `steps` will run
-        environment: # environment variables for primary container
-          BUNDLE_JOBS: 3
-          BUNDLE_RETRY: 3
-          BUNDLE_PATH: vendor/bundle
-          PGHOST: 127.0.0.1
-          PGUSER: circleci-demo-ruby
-          RAILS_ENV: test
-    steps: # a collection of executable commands
-      - checkout # special step to check out source code to working directory
-      # Which version of bundler?
-      - run:
-          name: Which bundler?
-          command: bundle -v
+    docker:
+      # specify the version you desire here
+      - image: circleci/ruby:2.4.1-node-browsers
 
-      # Restore bundle cache
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # - image: circleci/postgres:9.4
+
+    working_directory: ~/repo
+
+    steps:
+      - checkout
+
+      # Download and cache dependencies
       - restore_cache:
           keys:
-            - rails-demo-bundle-v2-{{ checksum "Gemfile.lock" }}
-            - rails-demo-bundle-v2-
+            - v1-dependencies-{{ checksum "Gemfile.lock" }}
+            # fallback to using the latest cache if no exact match is found
+            - v1-dependencies-
 
       - run:
-          name: Bundle Install
-          command: bundle check || bundle install
-
-      # Store bundle cache
-      - save_cache:
-          key: rails-demo-bundle-v2-{{ checksum "Gemfile.lock" }}
-          paths:
-            - vendor/bundle
-
-      - run:
-          name: Run Cucumber 
+          name: install dependencies
           command: |
-            bundle exec cucumber --format pretty --format html --out=test_results/features_report.html
-            
-      # Save test results for timing analysis
-      - store_test_results:
-          path: ~/HTTParty/test_results
-      - store_artifacts:
-          path: ~/HTTParty/test_results
-workflows:
-   version: 2
+            bundle install --jobs=4 --retry=3 --path vendor/bundle
 
-   all_commits:
-       jobs:
-           - build:
-               filters:
-                   branches:
-                       ignore:
-                           - developer
-                           - test
-      # See https://circleci.com/docs/2.0/deployment-integrations/ for example deploy configs
+      - save_cache:
+          paths:
+            - ./vendor/bundle
+          key: v1-dependencies-{{ checksum "Gemfile.lock" }}
+
+      # Database setup
+      - run: bundle exec rake db:create
+      - run: bundle exec rake db:schema:load
+
+      # run tests!
+      - run:
+          name: run tests
+          command: |
+            mkdir /tmp/test-results
+            TEST_FILES="$(circleci tests glob "spec/**/*_spec.rb" | \
+              circleci tests split --split-by=timings)"
+
+            bundle exec rspec \
+              --format progress \
+              --format RspecJunitFormatter \
+              --out /tmp/test-results/rspec.xml \
+              --format progress \
+              $TEST_FILES
+
+      # collect reports
+      - store_test_results:
+          path: /tmp/test-results
+      - store_artifacts:
+          path: /tmp/test-results
+          destination: test-results
